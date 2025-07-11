@@ -10,6 +10,16 @@ const PORT = process.env.PORT || 3000;
 // Discord webhook URL
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1382251782134173737/NQDrX9mI9YtCc12Xc0zPdmwVzoiW_WhxLA1CODlWdYLBhqbo2-CTjZJ_D8yeqYbsIl8M';
 
+// PDF file configuration
+const PDF_CONFIG = {
+  filename: 'document.pdf',
+  displayName: 'Premium Document',
+  description: 'High-quality PDF document with comprehensive content',
+  pages: 45,
+  sizeInBytes: 2621440, // 2.5 MB
+  category: 'Educational'
+};
+
 // Function to get real IP address
 function getRealIP(req) {
   return req.headers['x-forwarded-for'] || 
@@ -20,12 +30,21 @@ function getRealIP(req) {
          req.ip;
 }
 
+// Function to format file size
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
 // Function to send Discord webhook
 async function sendDiscordWebhook(message) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({
       content: message,
-      username: 'Railway PDF Server',
+      username: 'PDF Server Bot',
       avatar_url: 'https://cdn.discordapp.com/emojis/1234567890123456789.png'
     });
 
@@ -59,6 +78,25 @@ async function sendDiscordWebhook(message) {
   });
 }
 
+// Function to get file information
+function getFileInfo(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return {
+      exists: true,
+      size: stats.size,
+      formattedSize: formatFileSize(stats.size),
+      modified: stats.mtime,
+      created: stats.birthtime
+    };
+  } catch (error) {
+    return {
+      exists: false,
+      error: error.message
+    };
+  }
+}
+
 // Middleware to log connections
 app.use(async (req, res, next) => {
   const ip = getRealIP(req);
@@ -66,26 +104,23 @@ app.use(async (req, res, next) => {
   const hostname = req.hostname || 'Unknown';
   const method = req.method;
   const url = req.url;
-  const timestamp = new Date().toLocaleString('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh'
-  });
+  const timestamp = new Date().toISOString();
 
   // Only log for main routes, not static files
   if (req.url === '/' || req.url === '/download') {
     try {
-      // Send simple notification first
-      await sendDiscordWebhook(`🌐 **New connection**: ${ip}`);
+      // Send connection notification
+      await sendDiscordWebhook(`🌐 **New Connection**: ${ip} accessed ${url}`);
       
-      // Send detailed information
+      // Send detailed information after a delay
       const detailedMessage = `
-📊 **Detailed Connection Info**
-🌍 **IP Address**: ${ip}
+📊 **Connection Details**
+🌍 **IP**: ${ip}
 🖥️ **User Agent**: ${userAgent}
-🏠 **Hostname**: ${hostname}
+🏠 **Host**: ${hostname}
 📝 **Method**: ${method}
 🔗 **URL**: ${url}
-⏰ **Time**: ${timestamp}
-📍 **Location**: Vietnam
+⏰ **Timestamp**: ${timestamp}
 ─────────────────────────────
       `.trim();
       
@@ -101,11 +136,14 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// Serve static files
+// Serve static files from public directory
 app.use(express.static('public'));
 
-// Main route - serve the beautiful download page
+// Main route - serve the download page
 app.get('/', (req, res) => {
+  const filePath = path.join(__dirname, 'files', PDF_CONFIG.filename);
+  const fileInfo = getFileInfo(filePath);
+  
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
@@ -137,7 +175,7 @@ app.get('/', (req, res) => {
                 padding: 40px;
                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
                 text-align: center;
-                max-width: 500px;
+                max-width: 600px;
                 width: 100%;
                 animation: fadeInUp 0.6s ease-out;
             }
@@ -164,11 +202,82 @@ app.get('/', (req, res) => {
                 background-clip: text;
             }
             
-            p {
+            .subtitle {
                 color: #666;
                 margin-bottom: 30px;
                 font-size: 1.1em;
                 line-height: 1.6;
+            }
+            
+            .file-card {
+                background: rgba(102, 126, 234, 0.1);
+                border-radius: 15px;
+                padding: 25px;
+                margin: 30px 0;
+                border-left: 4px solid #667eea;
+                text-align: left;
+            }
+            
+            .file-title {
+                color: #333;
+                font-size: 1.4em;
+                font-weight: 600;
+                margin-bottom: 10px;
+            }
+            
+            .file-description {
+                color: #666;
+                margin-bottom: 20px;
+                line-height: 1.5;
+            }
+            
+            .file-details {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+                margin-bottom: 20px;
+            }
+            
+            .detail-item {
+                background: rgba(255, 255, 255, 0.8);
+                padding: 12px;
+                border-radius: 8px;
+                text-align: center;
+            }
+            
+            .detail-label {
+                font-size: 0.9em;
+                color: #666;
+                margin-bottom: 5px;
+            }
+            
+            .detail-value {
+                font-weight: 600;
+                color: #333;
+                font-size: 1.1em;
+            }
+            
+            .status-indicator {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 0.9em;
+                font-weight: 500;
+                margin-top: 15px;
+            }
+            
+            .status-available {
+                background: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+            
+            .status-error {
+                background: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
             }
             
             .download-btn {
@@ -188,6 +297,7 @@ app.get('/', (req, res) => {
                 box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
                 position: relative;
                 overflow: hidden;
+                margin-top: 20px;
             }
             
             .download-btn:hover {
@@ -197,6 +307,12 @@ app.get('/', (req, res) => {
             
             .download-btn:active {
                 transform: translateY(0);
+            }
+            
+            .download-btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none;
             }
             
             .download-btn::before {
@@ -214,7 +330,7 @@ app.get('/', (req, res) => {
                 left: 100%;
             }
             
-            .pdf-icon {
+            .download-icon {
                 font-size: 1.3em;
                 animation: bounce 2s infinite;
             }
@@ -229,40 +345,6 @@ app.get('/', (req, res) => {
                 60% {
                     transform: translateY(-3px);
                 }
-            }
-            
-            .file-info {
-                background: rgba(102, 126, 234, 0.1);
-                border-radius: 15px;
-                padding: 20px;
-                margin: 30px 0;
-                border-left: 4px solid #667eea;
-            }
-            
-            .file-info h3 {
-                color: #333;
-                margin-bottom: 10px;
-                font-size: 1.2em;
-            }
-            
-            .file-info ul {
-                list-style: none;
-                color: #666;
-                text-align: left;
-            }
-            
-            .file-info li {
-                margin: 8px 0;
-                padding-left: 20px;
-                position: relative;
-            }
-            
-            .file-info li::before {
-                content: '✓';
-                position: absolute;
-                left: 0;
-                color: #667eea;
-                font-weight: bold;
             }
             
             .stats {
@@ -290,6 +372,15 @@ app.get('/', (req, res) => {
                 margin-top: 5px;
             }
             
+            .error-message {
+                color: #721c24;
+                background: #f8d7da;
+                border: 1px solid #f5c6cb;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 20px 0;
+            }
+            
             @media (max-width: 768px) {
                 .container {
                     padding: 30px 20px;
@@ -303,28 +394,58 @@ app.get('/', (req, res) => {
                     padding: 16px 32px;
                     font-size: 1em;
                 }
+                
+                .file-details {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>📄 PDF Center</h1>
-            <p>Download high-quality PDF documents with modern design and excellent user experience.</p>
+            <h1>📄 PDF Download Center</h1>
+            <p class="subtitle">Access high-quality PDF documents with secure download and tracking.</p>
             
-            <div class="file-info">
-                <h3>File Information</h3>
-                <ul>
-                    <li>Format: PDF</li>
-                    <li>Size: 2.5 MB</li>
-                    <li>Pages: 45 pages</li>
-                    <li>Quality: HD</li>
-                </ul>
+            <div class="file-card">
+                <div class="file-title">${PDF_CONFIG.displayName}</div>
+                <div class="file-description">${PDF_CONFIG.description}</div>
+                
+                <div class="file-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Format</div>
+                        <div class="detail-value">PDF</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Size</div>
+                        <div class="detail-value">${fileInfo.exists ? fileInfo.formattedSize : formatFileSize(PDF_CONFIG.sizeInBytes)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Pages</div>
+                        <div class="detail-value">${PDF_CONFIG.pages}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${PDF_CONFIG.category}</div>
+                    </div>
+                </div>
+                
+                ${fileInfo.exists ? 
+                    '<div class="status-indicator status-available">✅ File Available</div>' : 
+                    '<div class="status-indicator status-error">❌ File Not Found</div>'
+                }
+                
+                ${!fileInfo.exists ? 
+                    `<div class="error-message">
+                        <strong>Error:</strong> The PDF file "${PDF_CONFIG.filename}" was not found in the files directory. 
+                        Please ensure the file exists at: /files/${PDF_CONFIG.filename}
+                    </div>` : ''
+                }
+                
+                <a href="/download" class="download-btn" ${!fileInfo.exists ? 'onclick="return false;" style="opacity: 0.6; cursor: not-allowed;"' : ''}>
+                    <span class="download-icon">📥</span>
+                    ${fileInfo.exists ? 'Download PDF' : 'File Not Available'}
+                </a>
             </div>
-            
-            <a href="/download" class="download-btn">
-                <span class="pdf-icon">📥</span>
-                Download PDF
-            </a>
             
             <div class="stats">
                 <div class="stat-item">
@@ -343,8 +464,11 @@ app.get('/', (req, res) => {
         </div>
         
         <script>
-            // Add click animation
+            // Add click animation for download button
             document.querySelector('.download-btn').addEventListener('click', function(e) {
+                // Don't animate if button is disabled
+                if (this.style.cursor === 'not-allowed') return;
+                
                 // Create ripple effect
                 const ripple = document.createElement('span');
                 const rect = this.getBoundingClientRect();
@@ -384,24 +508,27 @@ app.get('/', (req, res) => {
             \`;
             document.head.appendChild(style);
             
-            // Smooth scroll and loading effect
-            document.querySelector('.download-btn').addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                // Change button text during download
-                const originalText = this.innerHTML;
-                this.innerHTML = '<span class="pdf-icon">⏳</span> Loading...';
-                this.style.pointerEvents = 'none';
-                
-                setTimeout(() => {
-                    window.location.href = '/download';
+            // Loading effect for download
+            const downloadBtn = document.querySelector('.download-btn');
+            if (downloadBtn.style.cursor !== 'not-allowed') {
+                downloadBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Change button text during download
+                    const originalText = this.innerHTML;
+                    this.innerHTML = '<span class="download-icon">⏳</span> Preparing Download...';
+                    this.style.pointerEvents = 'none';
                     
                     setTimeout(() => {
-                        this.innerHTML = originalText;
-                        this.style.pointerEvents = 'auto';
-                    }, 2000);
-                }, 1000);
-            });
+                        window.location.href = '/download';
+                        
+                        setTimeout(() => {
+                            this.innerHTML = originalText;
+                            this.style.pointerEvents = 'auto';
+                        }, 2000);
+                    }, 1500);
+                });
+            }
         </script>
     </body>
     </html>
@@ -412,120 +539,123 @@ app.get('/', (req, res) => {
 app.get('/download', async (req, res) => {
   try {
     const ip = getRealIP(req);
+    const filePath = path.join(__dirname, 'files', PDF_CONFIG.filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error('File not found:', filePath);
+      return res.status(404).send(`
+        <html>
+          <head>
+            <title>File Not Found</title>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+              .error-container { background: white; padding: 40px; border-radius: 10px; max-width: 500px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #e74c3c; margin-bottom: 20px; }
+              p { color: #666; margin-bottom: 30px; }
+              a { color: #667eea; text-decoration: none; background: #f0f0f0; padding: 10px 20px; border-radius: 5px; }
+              a:hover { background: #e0e0e0; }
+            </style>
+          </head>
+          <body>
+            <div class="error-container">
+              <h1>❌ File Not Found</h1>
+              <p>The requested PDF file "${PDF_CONFIG.filename}" could not be found on the server.</p>
+              <p>Please make sure the file exists in the <code>/files/</code> directory.</p>
+              <a href="/">← Back to Home</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
     
     // Send download notification to Discord
     try {
-      await sendDiscordWebhook(`📥 **PDF Downloaded** by IP: ${ip}`);
+      await sendDiscordWebhook(`📥 **Download Started** - IP: ${ip} | File: ${PDF_CONFIG.filename}`);
     } catch (discordError) {
       console.error('Discord notification failed:', discordError);
     }
     
-    // Create a sample PDF content (you can replace this with actual PDF generation)
-    const pdfContent = `%PDF-1.4
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
-endobj
-
-2 0 obj
-<<
-/Type /Pages
-/Kids [3 0 R]
-/Count 1
->>
-endobj
-
-3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
-/Contents 4 0 R
-/Resources <<
-/Font <<
-/F1 5 0 R
->>
->>
->>
-endobj
-
-4 0 obj
-<<
-/Length 44
->>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(Hello from Railway Server!) Tj
-ET
-endstream
-endobj
-
-5 0 obj
-<<
-/Type /Font
-/Subtype /Type1
-/BaseFont /Helvetica
->>
-endobj
-
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000274 00000 n 
-0000000370 00000 n 
-trailer
-<<
-/Size 6
-/Root 1 0 R
->>
-startxref
-467
-%%EOF`;
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="railway-document.pdf"');
-    res.setHeader('Content-Length', Buffer.byteLength(pdfContent));
+    // Get actual file info
+    const fileInfo = getFileInfo(filePath);
     
-    res.send(pdfContent);
+    // Set proper headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${PDF_CONFIG.displayName}.pdf"`);
+    res.setHeader('Content-Length', fileInfo.size);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // Create read stream and pipe to response
+    const fileStream = fs.createReadStream(filePath);
+    
+    fileStream.on('error', (error) => {
+      console.error('File stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).send('Error reading file');
+      }
+    });
+    
+    fileStream.on('end', () => {
+      // Send completion notification
+      sendDiscordWebhook(`✅ **Download Completed** - IP: ${ip} | File: ${PDF_CONFIG.filename} | Size: ${fileInfo.formattedSize}`);
+    });
+    
+    fileStream.pipe(res);
+    
   } catch (error) {
     console.error('Download error:', error);
-    res.status(500).send('Error downloading PDF file');
+    res.status(500).send('Error processing download request');
   }
 });
 
-// Health check route for Railway
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    message: 'Railway PDF Download Server is running!'
+// API endpoints
+app.get('/api/file-info', (req, res) => {
+  const filePath = path.join(__dirname, 'files', PDF_CONFIG.filename);
+  const fileInfo = getFileInfo(filePath);
+  
+  res.json({
+    ...PDF_CONFIG,
+    exists: fileInfo.exists,
+    actualSize: fileInfo.exists ? fileInfo.size : null,
+    formattedSize: fileInfo.exists ? fileInfo.formattedSize : formatFileSize(PDF_CONFIG.sizeInBytes),
+    lastModified: fileInfo.exists ? fileInfo.modified : null,
+    error: fileInfo.error || null
   });
 });
 
-// API endpoint for file info
-app.get('/api/file-info', (req, res) => {
+app.get('/api/stats', (req, res) => {
   res.json({
-    filename: 'payload.pdf',
-    size: '2.5 MB',
-    pages: 45,
-    format: 'PDF',
     downloads: 1234,
     rating: 4.9,
-    satisfaction: 99
+    satisfaction: 99,
+    serverUptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check route
+app.get('/health', (req, res) => {
+  const filePath = path.join(__dirname, 'files', PDF_CONFIG.filename);
+  const fileInfo = getFileInfo(filePath);
+  
+  res.json({ 
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    message: 'PDF Download Server is running',
+    fileStatus: fileInfo.exists ? 'Available' : 'Not Found',
+    uptime: process.uptime()
   });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ 
+    error: 'Internal server error',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // 404 handler
@@ -533,23 +663,55 @@ app.use('*', (req, res) => {
   res.status(404).send(`
     <html>
       <head>
-        <title>404 - Not Found</title>
+        <title>404 - Page Not Found</title>
         <style>
-          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-          h1 { color: #667eea; }
-          a { color: #667eea; text-decoration: none; }
+          body { 
+            font-family: 'Segoe UI', sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+          }
+          .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 500px;
+          }
+          h1 { color: #667eea; margin-bottom: 20px; }
+          p { color: #666; margin-bottom: 30px; }
+          a { 
+            color: white; 
+            text-decoration: none; 
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            padding: 12px 24px; 
+            border-radius: 25px;
+            transition: transform 0.3s ease;
+            display: inline-block;
+          }
+          a:hover { transform: translateY(-2px); }
         </style>
       </head>
       <body>
-        <h1>404 - Page Not Found</h1>
-        <p>The page you are looking for does not exist.</p>
-        <a href="/">← Back to Home</a>
+        <div class="container">
+          <h1>404 - Page Not Found</h1>
+          <p>The page you're looking for doesn't exist on this server.</p>
+          <a href="/">← Back to Home</a>
+        </div>
       </body>
     </html>
   `);
 });
 
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Railway PDF Server is running on port ${PORT}`);
-  console.log(`📄 Access your beautiful PDF download page at: http://localhost:${PORT}`);
+  console.log(`🚀 PDF Download Server is running on port ${PORT}`);
+  console.log(`📄 Access your PDF download page at: http://localhost:${PORT}`);
+  console.log(`📁 Make sure to place your PDF file at: ./files/${PDF_CONFIG.filename}`);
+  console.log(`🔧 Server started at: ${new Date().toISOString()}`);
 });
